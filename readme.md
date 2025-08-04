@@ -1,7 +1,7 @@
 # converting single file to image
 
 vibe coded but hey it works  
-the image format is VERY uncompressed (ppm: [https://en.wikipedia.org/wiki/Netpbm](netpbm))  
+the image format is VERY uncompressed (ppm: [netpbm](https://en.wikipedia.org/wiki/Netpbm))  
 to run do `make` and `make run`  
 
 ## potential todos
