@@ -8,3 +8,5 @@ to run do `make` and `make run`
 - generate a real image format by implementing compression  
 - break into multiple images if the image is too long   
 - make the command a bit better  
+
+![the output](./output.ppm)
