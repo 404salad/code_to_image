@@ -9,10 +9,20 @@ ifeq ($(CC),gcc)
 endif
 
 main: main.c
-	$(CC) $(CFLAGS) main.c -o main 
+	$(CC) $(CFLAGS) main.c -o main -ljpeg
 
 run: main
-	@echo "Enter input file path:" && read input_file && ./main Lat2-VGA16.psf output.ppm < $$input_file && open output.ppm
+	@echo "Enter input file path:" && \
+	read input_file && \
+	./main Lat2-VGA16.psf output.jpg < "$$input_file" && \
+	{ \
+		if command -v open >/dev/null 2>&1; then open output.jpg; \
+		elif command -v xdg-open >/dev/null 2>&1; then xdg-open output.jpg; \
+		else echo "Please open output.jpg manually"; \
+		fi \
+	}
 
 clean:
-	rm -f main output.ppm
+	rm -f main output.jpg
+
+.PHONY: run clean

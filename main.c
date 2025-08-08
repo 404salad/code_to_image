@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
+#include <jpeglib.h>
 
 #define CHAR_WIDTH 8
 #define CHAR_HEIGHT 16
@@ -32,10 +33,14 @@ void load_font(const char *font_path) {
     
     // Skip Unicode table if present
     if (has_unicode_table) {
-        lseek(font_fd, 512, SEEK_CUR);
+        if (lseek(font_fd, 512, SEEK_CUR) == -1) {
+            perror("Error seeking past unicode table");
+            close(font_fd);
+            exit(1);
+        }
     }
     
-    // Read font glyphs - FIXED: incorrect read() parameters
+    // Read font glyphs
     if (read(font_fd, font, sizeof(font)) != sizeof(font)) {
         perror("Error reading font data");
         close(font_fd);
@@ -47,24 +52,60 @@ void load_font(const char *font_path) {
 }
 
 // Render a character onto the bitmap
-void draw_char(unsigned char *bitmap, int img_width, int x, int y, char c) {
-    if (c < 0) return; // Invalid character check
-    
+void draw_char(unsigned char *bitmap, int img_width, int x, int y, unsigned char c) {
+    if (c >= 256) return; // Guard
     unsigned char *glyph = font + (c * CHAR_HEIGHT);
     for (int i = 0; i < CHAR_HEIGHT; i++) {
         for (int j = 0; j < CHAR_WIDTH; j++) {
-            if (glyph[i] & (1 << (7 - j))) {
-                bitmap[(y + i) * img_width + (x + j)] = 0; // Black pixel
-            } else {
-                bitmap[(y + i) * img_width + (x + j)] = 255; // White pixel
-            }
+            int pixel_pos = (y + i) * img_width + (x + j);
+            bitmap[pixel_pos] = (glyph[i] & (1 << (7 - j))) ? 0 : 255; // black or white
         }
     }
 }
 
+// Save bitmap as JPEG using libjpeg
+int save_jpeg(const char *filename, unsigned char *bitmap, int width, int height, int quality) {
+    struct jpeg_compress_struct cinfo;
+    struct jpeg_error_mgr jerr;
+
+    FILE *outfile = fopen(filename, "wb");
+    if (!outfile) {
+        perror("Error opening output JPEG file");
+        return 0;
+    }
+
+    cinfo.err = jpeg_std_error(&jerr);
+    jpeg_create_compress(&cinfo);
+    jpeg_stdio_dest(&cinfo, outfile);
+
+    cinfo.image_width = width;
+    cinfo.image_height = height;
+    cinfo.input_components = 1;         // Grayscale = 1 component
+    cinfo.in_color_space = JCS_GRAYSCALE;
+
+    jpeg_set_defaults(&cinfo);
+    jpeg_set_quality(&cinfo, quality, TRUE);
+
+    jpeg_start_compress(&cinfo, TRUE);
+
+    JSAMPROW row_pointer[1];
+    int row_stride = width;
+
+    while (cinfo.next_scanline < cinfo.image_height) {
+        row_pointer[0] = &bitmap[cinfo.next_scanline * row_stride];
+        jpeg_write_scanlines(&cinfo, row_pointer, 1);
+    }
+
+    jpeg_finish_compress(&cinfo);
+    jpeg_destroy_compress(&cinfo);
+    fclose(outfile);
+
+    return 1;
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 3) {
-        fprintf(stderr, "Usage: %s <font path> <output.pgm>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <font path> <output.jpg>\n", argv[0]);
         return 1;
     }
     
@@ -170,25 +211,20 @@ int main(int argc, char *argv[]) {
                 bitmap = new_bitmap;
                 img_height = new_height;
             }
-            draw_char(bitmap, img_width, x, y, c);
+            draw_char(bitmap, img_width, x, y, (unsigned char)c);
             x += CHAR_WIDTH;
         }
     }
     
-    // Save as PGM
-    FILE *pgm = fopen(argv[2], "wb");
-    if (!pgm) {
-        perror("Error opening output file");
+    // Save as JPEG
+    if (!save_jpeg(argv[2], bitmap, img_width, img_height, 90)) {
+        fprintf(stderr, "Failed to save JPEG image\n");
         free(bitmap);
         free(input_buffer);
         return 1;
     }
     
-    fprintf(pgm, "P5\n%d %d\n255\n", img_width, img_height);
-    fwrite(bitmap, 1, img_width * img_height, pgm);
-    fclose(pgm);
-    
-    printf("PGM image saved to %s\n", argv[2]);
+    printf("JPEG image saved to %s\n", argv[2]);
     
     free(bitmap);
     free(input_buffer);
